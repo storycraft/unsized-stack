@@ -1,0 +1,11 @@
+[package]
+name = "trait-stack"
+description = "Fast heterogeneous stack"
+version = "0.1.0"
+edition = "2021"
+authors = ["storycraft <storycraft@pancake.sh>"]
+license = "MIT"
+categories = ["data-structures"]
+repository = "https://github.com/storycraft/trait-stack/"
+
+[dependencies]
