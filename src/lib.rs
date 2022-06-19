@@ -1,5 +1,4 @@
 #![doc = include_str!("../readme.md")]
-
 // Unstable features
 #![feature(ptr_metadata, unsize)]
 
@@ -8,27 +7,24 @@ pub mod iter;
 use core::{
     fmt::Debug,
     marker::Unsize,
-    mem::{self, ManuallyDrop},
+    mem::{self},
     ops::{Index, IndexMut},
     ptr::{self, DynMetadata, Pointee},
     slice,
 };
-
 use iter::{Iter, IterMut};
 
-#[derive(Clone)]
 pub struct TraitStack<T: ?Sized + Pointee<Metadata = DynMetadata<T>>> {
-    // Drop of inner values are managed
-    data: ManuallyDrop<Vec<u8>>,
+    data: Vec<u8>,
 
-    table: Vec<(usize, DynMetadata<T>)>,
+    table: Vec<(usize, DynMetadata<T>)>
 }
 
 impl<T: ?Sized + Pointee<Metadata = DynMetadata<T>>> TraitStack<T> {
     pub const fn new() -> Self {
         Self {
-            data: ManuallyDrop::new(Vec::new()),
-            table: Vec::new(),
+            data: Vec::new(),
+            table: Vec::new()
         }
     }
 
