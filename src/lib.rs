@@ -17,14 +17,14 @@ use iter::{Iter, IterMut};
 pub struct TraitStack<T: ?Sized + Pointee<Metadata = DynMetadata<T>>> {
     data: Vec<u8>,
 
-    table: Vec<(usize, DynMetadata<T>)>
+    table: Vec<(usize, DynMetadata<T>)>,
 }
 
 impl<T: ?Sized + Pointee<Metadata = DynMetadata<T>>> TraitStack<T> {
     pub const fn new() -> Self {
         Self {
             data: Vec::new(),
-            table: Vec::new()
+            table: Vec::new(),
         }
     }
 
@@ -36,6 +36,11 @@ impl<T: ?Sized + Pointee<Metadata = DynMetadata<T>>> TraitStack<T> {
     #[inline]
     pub fn data_capacity(&self) -> usize {
         self.data.capacity()
+    }
+
+    #[inline]
+    pub fn table_capacity(&self) -> usize {
+        self.table.capacity()
     }
 
     #[inline]
@@ -53,26 +58,28 @@ impl<T: ?Sized + Pointee<Metadata = DynMetadata<T>>> TraitStack<T> {
         self.data.as_ptr()
     }
 
+    #[inline]
     pub fn get<'a>(&'a self, index: usize) -> Option<&'a T> {
         // SAFETY: Manually constructed reference have valid lifetime
         unsafe { Some(&*self.get_ptr(index)?) }
     }
 
+    #[inline]
     pub fn get_mut<'a>(&'a mut self, index: usize) -> Option<&'a mut T> {
         // SAFETY: Manually constructed reference have valid lifetime
         unsafe { Some(&mut *(self.get_ptr(index)? as *mut T)) }
     }
 
+    #[inline]
     unsafe fn get_ptr(&self, index: usize) -> Option<*const T> {
         let (offset, metadata) = *self.table.get(index)?;
 
         Some(self.dyn_ptr_from(offset, metadata))
     }
 
+    #[inline]
     unsafe fn dyn_ptr_from(&self, offset: usize, metadata: DynMetadata<T>) -> *const T {
-        let data = self.data.as_ptr().add(offset) as _;
-
-        ptr::from_raw_parts(data, metadata)
+        ptr::from_raw_parts(self.data.as_ptr().add(offset) as _, metadata)
     }
 
     pub fn push<I: Unsize<T>>(&mut self, item: I) {
@@ -99,14 +106,58 @@ impl<T: ?Sized + Pointee<Metadata = DynMetadata<T>>> TraitStack<T> {
         Some(())
     }
 
+    pub fn truncate(&mut self, len: usize) {
+        if len > self.table.len() {
+            return;
+        }
+
+        let data_start_offset = self.table[len].0;
+
+        for i in len..self.len() {
+            let (offset, metadata) = self.table[i];
+
+            // SAFETY: Data get removed after destructor
+            unsafe {
+                let data = self.dyn_ptr_from(offset, metadata);
+                ptr::drop_in_place(data as *mut T)
+            };
+        }
+
+        self.table.truncate(len);
+        self.data.truncate(data_start_offset);
+    }
+
+    #[inline]
+    pub fn shrink_data_to(&mut self, min_capacity: usize) {
+        self.data.shrink_to(min_capacity);
+    }
+
+    #[inline]
+    pub fn shrink_table_to(&mut self, min_capacity: usize) {
+        self.table.shrink_to(min_capacity);
+    }
+
+    #[inline]
+    pub fn shrink_data_to_fit(&mut self) {
+        self.data.shrink_to_fit();
+    }
+
+    #[inline]
+    pub fn shrink_table_to_fit(&mut self) {
+        self.table.shrink_to_fit();
+    }
+
+    #[inline]
     pub fn last(&self) -> Option<&T> {
         self.get(self.len() - 1)
     }
 
+    #[inline]
     pub fn last_mut(&mut self) -> Option<&mut T> {
         self.get_mut(self.len() - 1)
     }
 
+    #[inline]
     pub fn iter(&self) -> Iter<T> {
         Iter {
             ptr: self.data.as_ptr(),
@@ -114,6 +165,7 @@ impl<T: ?Sized + Pointee<Metadata = DynMetadata<T>>> TraitStack<T> {
         }
     }
 
+    #[inline]
     pub fn iter_mut(&mut self) -> IterMut<T> {
         IterMut {
             ptr: self.data.as_mut_ptr(),
