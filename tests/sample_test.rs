@@ -17,6 +17,6 @@ fn trait_stack_test() {
     stack.pop();
     stack.pop();
     stack.pop();
-
+    
     assert_eq!(stack.len(), 0);
 }

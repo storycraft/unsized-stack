@@ -64,7 +64,7 @@ impl<'a, T: ?Sized + Pointee<Metadata = DynMetadata<T>>> DoubleEndedIterator for
 impl<'a, T: ?Sized + Pointee<Metadata = DynMetadata<T>>> ExactSizeIterator for Iter<'a, T> {}
 
 pub struct IterMut<'a, T: ?Sized + Pointee<Metadata = DynMetadata<T>>> {
-    pub(crate) ptr: *mut u8,
+    pub(crate) ptr: *const u8,
     pub(crate) table_iter: slice::Iter<'a, (usize, DynMetadata<T>)>,
 }
 

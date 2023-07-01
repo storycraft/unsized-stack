@@ -7,35 +7,39 @@ pub mod iter;
 use core::{
     fmt::Debug,
     marker::Unsize,
-    mem::{self},
+    mem,
     ops::{Index, IndexMut},
     ptr::{self, DynMetadata, Pointee},
-    slice,
 };
 use iter::{Iter, IterMut};
+use std::alloc;
+use std::{alloc::Layout, ptr::NonNull};
+
+#[repr(align(16))]
+struct DefaultBuffer;
 
 pub struct TraitStack<T: ?Sized + Pointee<Metadata = DynMetadata<T>>> {
-    data: Vec<u8>,
+    buf: NonNull<u8>,
+    buf_layout: Layout,
+    buf_occupied: usize,
 
     table: Vec<(usize, DynMetadata<T>)>,
 }
 
 impl<T: ?Sized + Pointee<Metadata = DynMetadata<T>>> TraitStack<T> {
+    pub const DEFAULT_ALIGN: usize = mem::align_of::<DefaultBuffer>();
+
     pub const fn new() -> Self {
         Self {
-            data: Vec::new(),
+            buf: NonNull::<DefaultBuffer>::dangling().cast(),
+            buf_layout: Layout::new::<DefaultBuffer>(),
+            buf_occupied: 0,
             table: Vec::new(),
         }
     }
 
-    #[inline]
-    pub fn data_len(&self) -> usize {
-        self.data.len()
-    }
-
-    #[inline]
-    pub fn data_capacity(&self) -> usize {
-        self.data.capacity()
+    pub const fn buf_layout(&self) -> Layout {
+        self.buf_layout
     }
 
     #[inline]
@@ -54,18 +58,18 @@ impl<T: ?Sized + Pointee<Metadata = DynMetadata<T>>> TraitStack<T> {
     }
 
     #[inline]
-    pub fn data_as_ptr(&self) -> *const u8 {
-        self.data.as_ptr()
+    pub fn buf_ptr(&self) -> *const u8 {
+        self.buf.as_ptr().cast_const()
     }
 
     #[inline]
-    pub fn get<'a>(&'a self, index: usize) -> Option<&'a T> {
+    pub fn get(&self, index: usize) -> Option<&T> {
         // SAFETY: Manually constructed reference have valid lifetime
         unsafe { Some(&*self.get_ptr(index)?) }
     }
 
     #[inline]
-    pub fn get_mut<'a>(&'a mut self, index: usize) -> Option<&'a mut T> {
+    pub fn get_mut(&mut self, index: usize) -> Option<&mut T> {
         // SAFETY: Manually constructed reference have valid lifetime
         unsafe { Some(&mut *(self.get_ptr(index)? as *mut T)) }
     }
@@ -79,20 +83,57 @@ impl<T: ?Sized + Pointee<Metadata = DynMetadata<T>>> TraitStack<T> {
 
     #[inline]
     unsafe fn dyn_ptr_from(&self, offset: usize, metadata: DynMetadata<T>) -> *const T {
-        ptr::from_raw_parts(self.data.as_ptr().add(offset) as _, metadata)
+        ptr::from_raw_parts(self.buf.as_ptr().add(offset) as _, metadata)
     }
 
-    pub fn push<I: Unsize<T>>(&mut self, item: I) {
-        let (data, metadata) = (&item as *const T).to_raw_parts();
+    fn reserve_space_for(&mut self, value_layout: Layout) -> usize {
+        let padding = self.buf_occupied % value_layout.align();
+        let offset = self.buf_occupied + padding;
 
-        let offset = self.data.len();
+        let new_buf_layout = Layout::from_size_align(
+            (self.buf_occupied + padding + value_layout.size()).next_power_of_two(),
+            self.buf_layout.align().max(value_layout.align()),
+        )
+        .unwrap();
+
+        if self.buf_layout != new_buf_layout {
+            let new_buf = unsafe {
+                if self.buf_layout.size() == 0 {
+                    alloc::alloc(new_buf_layout)
+                } else if self.buf_layout.align() != new_buf_layout.align() {
+                    alloc::dealloc(self.buf.as_ptr(), self.buf_layout);
+                    alloc::alloc(new_buf_layout)
+                } else {
+                    alloc::realloc(self.buf.as_ptr(), self.buf_layout, new_buf_layout.size())
+                }
+            };
+
+            self.buf = NonNull::new(new_buf).unwrap();
+            self.buf_layout = new_buf_layout;
+        }
+        self.buf_occupied += padding + value_layout.size();
+
+        return offset;
+    }
+
+    pub fn push<I: Unsize<T>>(&mut self, mut item: I) {
+        let (data, metadata) = (&mut item as *mut T).to_raw_parts();
+
+        let item_layout = Layout::new::<I>();
+        let offset = self.reserve_space_for(item_layout);
 
         // SAFETY: item is moved to data and original is forgotten.
-        self.data
-            .extend_from_slice(unsafe { slice::from_raw_parts(data as _, mem::size_of::<I>()) });
+        unsafe {
+            ptr::copy_nonoverlapping(
+                data as *mut u8,
+                self.buf.as_ptr().add(offset),
+                item_layout.size(),
+            )
+        };
         mem::forget(item);
 
         self.table.push((offset, metadata));
+        self.buf_occupied += item_layout.size();
     }
 
     pub fn pop(&mut self) -> Option<()> {
@@ -101,13 +142,13 @@ impl<T: ?Sized + Pointee<Metadata = DynMetadata<T>>> TraitStack<T> {
 
         // SAFETY: Data get removed after destructor
         unsafe { ptr::drop_in_place(data as *mut T) };
-        self.data.truncate(offset);
+        self.buf_occupied = offset;
 
         Some(())
     }
 
     pub fn truncate(&mut self, len: usize) {
-        if len > self.table.len() {
+        if len >= self.table.len() {
             return;
         }
 
@@ -124,27 +165,7 @@ impl<T: ?Sized + Pointee<Metadata = DynMetadata<T>>> TraitStack<T> {
         }
 
         self.table.truncate(len);
-        self.data.truncate(data_start_offset);
-    }
-
-    #[inline]
-    pub fn shrink_data_to(&mut self, min_capacity: usize) {
-        self.data.shrink_to(min_capacity);
-    }
-
-    #[inline]
-    pub fn shrink_table_to(&mut self, min_capacity: usize) {
-        self.table.shrink_to(min_capacity);
-    }
-
-    #[inline]
-    pub fn shrink_data_to_fit(&mut self) {
-        self.data.shrink_to_fit();
-    }
-
-    #[inline]
-    pub fn shrink_table_to_fit(&mut self) {
-        self.table.shrink_to_fit();
+        self.buf_occupied = data_start_offset;
     }
 
     #[inline]
@@ -160,7 +181,7 @@ impl<T: ?Sized + Pointee<Metadata = DynMetadata<T>>> TraitStack<T> {
     #[inline]
     pub fn iter(&self) -> Iter<T> {
         Iter {
-            ptr: self.data.as_ptr(),
+            ptr: self.buf.as_ptr(),
             table_iter: self.table.iter(),
         }
     }
@@ -168,7 +189,7 @@ impl<T: ?Sized + Pointee<Metadata = DynMetadata<T>>> TraitStack<T> {
     #[inline]
     pub fn iter_mut(&mut self) -> IterMut<T> {
         IterMut {
-            ptr: self.data.as_mut_ptr(),
+            ptr: self.buf.as_ptr(),
             table_iter: self.table.iter(),
         }
     }
@@ -182,7 +203,7 @@ impl<T: ?Sized + Pointee<Metadata = DynMetadata<T>>> TraitStack<T> {
         }
 
         self.table.clear();
-        self.data.clear();
+        self.buf_occupied = 0;
     }
 }
 
@@ -192,6 +213,12 @@ impl<T: ?Sized + Pointee<Metadata = DynMetadata<T>>> Drop for TraitStack<T> {
             // SAFETY: Data and table invalid after destructor
             unsafe {
                 ptr::drop_in_place(self.dyn_ptr_from(*offset, *metadata) as *mut T);
+            }
+        }
+
+        if self.buf_layout.size() > 0 {
+            unsafe {
+                alloc::dealloc(self.buf.as_ptr(), self.buf_layout);
             }
         }
     }
