@@ -168,19 +168,6 @@ impl<T: ?Sized> RawUnsizedStack<T> {
     }
 }
 
-impl<T: ?Sized + Debug> Debug for RawUnsizedStack<T> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_list()
-            .entries(
-                self.table
-                    .iter()
-                    .copied()
-                    .map(|item| unsafe { &*compose::<T>(self.buf.as_ptr(), item) }),
-            )
-            .finish()
-    }
-}
-
 impl<T: ?Sized> Drop for RawUnsizedStack<T> {
     fn drop(&mut self) {
         for item in self.table.iter().copied() {

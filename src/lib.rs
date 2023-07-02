@@ -124,6 +124,6 @@ impl<T: ?Sized> IndexMut<usize> for UnsizedStack<T> {
 
 impl<T: ?Sized + Debug> Debug for UnsizedStack<T> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        self.raw.fmt(f)
+        f.debug_list().entries(self.iter()).finish()
     }
 }
