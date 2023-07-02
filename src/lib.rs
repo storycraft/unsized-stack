@@ -2,7 +2,9 @@
 // Unstable features
 #![feature(ptr_metadata, unsize)]
 
+mod fat_ptr;
 pub mod iter;
+pub mod raw;
 
 use core::{
     fmt::Debug,
