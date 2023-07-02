@@ -226,7 +226,7 @@ impl TableItem {
         FatPtr::new(
             match self.offset {
                 Offset::Data(offset) => base.wrapping_add(offset),
-                Offset::Zst(align) => align as *mut _,
+                Offset::Zst(align) => sptr::invalid(align),
             },
             self.metadata,
         )

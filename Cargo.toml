@@ -9,3 +9,4 @@ categories = ["data-structures"]
 repository = "https://github.com/storycraft/unsized-stack/"
 
 [dependencies]
+sptr = "0.3.2"
