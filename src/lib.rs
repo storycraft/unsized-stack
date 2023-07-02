@@ -43,12 +43,20 @@ impl<T: ?Sized> UnsizedStack<T> {
         self.raw.buf_ptr()
     }
 
+    pub fn last(&self) -> Option<&T> {
+        self.raw.with_table(|table| table.last())
+    }
+
+    pub fn last_mut(&mut self) -> Option<&mut T> {
+        self.raw.with_table_mut(|table| table.last())
+    }
+
     pub fn get(&self, index: usize) -> Option<&T> {
-        self.raw.get(index)
+        self.raw.with_table(|table| table.get(index))
     }
 
     pub fn get_mut(&mut self, index: usize) -> Option<&mut T> {
-        self.raw.get_mut(index)
+        self.raw.with_table_mut(|table| table.get(index))
     }
 
     pub fn push<I>(&mut self, item: I, coercion: fn(&I) -> &T) {

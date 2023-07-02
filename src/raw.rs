@@ -60,21 +60,9 @@ impl<T: ?Sized> RawUnsizedStack<T> {
         &self.table
     }
 
-    pub fn push<I>(&mut self, item: I, coercion: fn(&I) -> &T) {
-        let (item_layout, item_ptr) = {
-            let coercion_ref = coercion(&item);
-            (
-                Layout::for_value(coercion_ref),
-                fat_ptr::decompose(coercion_ref as *const _),
-            )
-        };
-
+    pub fn reserve_for_push(&mut self, item_layout: Layout) -> Offset {
         if item_layout.size() == 0 {
-            self.table.push(TableItem::new(
-                Offset::Zst(item_layout.align()),
-                item_ptr.metadata(),
-            ));
-            return;
+            return Offset::Zst(item_layout.align());
         }
 
         let offset = {
@@ -95,13 +83,20 @@ impl<T: ?Sized> RawUnsizedStack<T> {
 
         if new_buf_layout.align() != self.buf_layout.align() {
             self.buf = {
+                let new_buf = NonNull::new(unsafe { alloc(new_buf_layout) }).unwrap();
+
                 if self.buf_layout.size() != 0 {
                     unsafe {
+                        ptr::copy_nonoverlapping(
+                            self.buf.as_ptr(),
+                            new_buf.as_ptr(),
+                            self.buf_layout.size(),
+                        );
                         dealloc(self.buf.as_ptr(), self.buf_layout);
                     }
                 }
 
-                NonNull::new(unsafe { alloc(new_buf_layout) }).unwrap()
+                new_buf
             };
 
             self.buf_layout = new_buf_layout;
@@ -118,18 +113,32 @@ impl<T: ?Sized> RawUnsizedStack<T> {
             self.buf_layout = new_buf_layout;
         }
 
-        self.buf_occupied = offset + item_layout.size();
-        unsafe {
-            ptr::copy_nonoverlapping(
-                item_ptr.ptr() as *const u8,
-                self.buf.as_ptr().wrapping_add(offset),
-                item_layout.size(),
-            );
-        }
-        mem::forget(item);
+        Offset::Data(offset)
+    }
 
-        self.table
-            .push(TableItem::new(Offset::Data(offset), item_ptr.metadata()));
+    pub fn push<I>(&mut self, item: I, coercion: fn(&I) -> &T) {
+        let (item_layout, item_ptr) = {
+            let coercion_ref = coercion(&item);
+            (
+                Layout::for_value(coercion_ref),
+                fat_ptr::decompose(coercion_ref as *const _),
+            )
+        };
+
+        let offset = self.reserve_for_push(item_layout);
+
+        if let Offset::Data(offset) = offset {
+            self.buf_occupied = offset + item_layout.size();
+            unsafe {
+                ptr::copy_nonoverlapping(
+                    item_ptr.ptr() as *const u8,
+                    self.buf.as_ptr().wrapping_add(offset),
+                    item_layout.size(),
+                );
+            }
+            mem::forget(item);
+        }
+        self.table.push(TableItem::new(offset, item_ptr.metadata()));
     }
 
     pub fn pop(&mut self) -> Option<()> {
@@ -145,20 +154,22 @@ impl<T: ?Sized> RawUnsizedStack<T> {
         Some(())
     }
 
-    pub fn last(&self) -> Option<&T> {
-        Some(unsafe { &*compose::<T>(self.buf.as_ptr(), *self.table.last()?) })
+    pub fn ptr_from_table(&self, func: impl for<'b> FnOnce(&'b [TableItem]) -> Option<&'b TableItem>) -> Option<*const T> {
+        Some(compose::<T>(self.buf.as_ptr(), *func(&self.table)?))
     }
 
-    pub fn last_mut(&mut self) -> Option<&mut T> {
-        Some(unsafe { &mut *compose::<T>(self.buf.as_ptr(), *self.table.last_mut()?).cast_mut() })
+    pub fn with_table(
+        &self,
+        func: impl for<'b> FnOnce(&'b [TableItem]) -> Option<&'b TableItem>,
+    ) -> Option<&T> {
+        Some(unsafe { &*self.ptr_from_table(func)? })
     }
 
-    pub fn get(&self, index: usize) -> Option<&T> {
-        Some(unsafe { &*compose::<T>(self.buf.as_ptr(), *self.table.get(index)?) })
-    }
-
-    pub fn get_mut(&mut self, index: usize) -> Option<&mut T> {
-        Some(unsafe { &mut *compose::<T>(self.buf.as_ptr(), *self.table().get(index)?).cast_mut() })
+    pub fn with_table_mut(
+        &mut self,
+        func: impl for<'b> FnOnce(&'b [TableItem]) -> Option<&'b TableItem>,
+    ) -> Option<&mut T> {
+        Some(unsafe { &mut *self.ptr_from_table(func)?.cast_mut() })
     }
 
     pub fn clear(&mut self) {
@@ -192,7 +203,7 @@ pub(crate) unsafe fn drop_item<T: ?Sized>(base: *const u8, item: TableItem) {
     ptr::drop_in_place(compose::<T>(base, item).cast_mut());
 }
 
-pub(crate) fn compose<T: ?Sized>(base: *const u8, item: TableItem) -> *const T {
+pub(crate) const fn compose<T: ?Sized>(base: *const u8, item: TableItem) -> *const T {
     fat_ptr::compose::<T>(item.to_fat_ptr(base))
 }
 
