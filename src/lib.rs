@@ -15,7 +15,6 @@ use raw::RawUnsizedStack;
 use std::{
     alloc::Layout,
     fmt::Debug,
-    marker::PhantomData,
     ops::{Index, IndexMut},
     ptr::NonNull,
 };
@@ -76,19 +75,11 @@ impl<T: ?Sized> UnsizedStack<T> {
     }
 
     pub fn iter(&self) -> Iter<'_, T> {
-        Iter {
-            base: self.raw.buf_ptr().as_ptr(),
-            table_iter: self.raw.table().iter(),
-            _phantom: PhantomData,
-        }
+        Iter::new(&self.raw)
     }
 
     pub fn iter_mut(&mut self) -> IterMut<'_, T> {
-        IterMut {
-            base: self.raw.buf_ptr().as_ptr(),
-            table_iter: self.raw.table().iter(),
-            _phantom: PhantomData,
-        }
+        IterMut::new(&mut self.raw)
     }
 
     pub fn clear(&mut self) {

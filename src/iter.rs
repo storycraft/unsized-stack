@@ -5,22 +5,31 @@
  */
 
 use core::slice;
-use std::marker::PhantomData;
+use std::{marker::PhantomData, ptr::NonNull};
 
-use crate::raw::{self, TableItem};
+use crate::raw::{self, RawUnsizedStack, TableItem};
 
 pub struct Iter<'a, T: ?Sized> {
-    pub(crate) base: *const u8,
-    pub(crate) table_iter: slice::Iter<'a, TableItem>,
-    pub(crate) _phantom: PhantomData<&'a T>,
+    base: NonNull<u8>,
+    table_iter: slice::Iter<'a, TableItem>,
+    _phantom: PhantomData<&'a T>,
 }
 
 impl<'a, T: ?Sized> Iter<'a, T> {
+    pub fn new(raw: &'a RawUnsizedStack<T>) -> Self {
+        Self {
+            base: raw.buf_ptr(),
+            table_iter: raw.table().iter(),
+            _phantom: PhantomData,
+        }
+    }
+
     fn with_iter(
         &mut self,
         func: impl FnOnce(&mut slice::Iter<'a, TableItem>) -> Option<&'a TableItem>,
     ) -> Option<&'a T> {
-        Some(unsafe { &*raw::compose::<T>(self.base, *func(&mut self.table_iter)?) })
+        // Safety: pointer created with [`TableItem`] from table
+        Some(unsafe { &*raw::compose::<T>(self.base.as_ptr(), *func(&mut self.table_iter)?) })
     }
 }
 
@@ -60,17 +69,28 @@ impl<'a, T: 'a + ?Sized> DoubleEndedIterator for Iter<'a, T> {
 impl<'a, T: ?Sized> ExactSizeIterator for Iter<'a, T> {}
 
 pub struct IterMut<'a, T: ?Sized> {
-    pub(crate) base: *const u8,
-    pub(crate) table_iter: slice::Iter<'a, TableItem>,
-    pub(crate) _phantom: PhantomData<&'a mut T>,
+    base: NonNull<u8>,
+    table_iter: slice::Iter<'a, TableItem>,
+    _phantom: PhantomData<&'a mut T>,
 }
 
 impl<'a, T: ?Sized> IterMut<'a, T> {
+    pub fn new(raw: &'a mut RawUnsizedStack<T>) -> Self {
+        Self {
+            base: raw.buf_ptr(),
+            table_iter: raw.table().iter(),
+            _phantom: PhantomData,
+        }
+    }
+
     fn with_iter(
         &mut self,
         func: impl FnOnce(&mut slice::Iter<'a, TableItem>) -> Option<&'a TableItem>,
     ) -> Option<&'a mut T> {
-        Some(unsafe { &mut *raw::compose::<T>(self.base, *func(&mut self.table_iter)?).cast_mut() })
+        // Safety: pointer created with [`TableItem`] from table
+        Some(unsafe {
+            &mut *raw::compose::<T>(self.base.as_ptr(), *func(&mut self.table_iter)?).cast_mut()
+        })
     }
 }
 

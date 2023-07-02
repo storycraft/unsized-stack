@@ -56,12 +56,14 @@ pub const fn check_valid<T: ?Sized>() {
 pub const fn compose<T: ?Sized>(fat_ptr: FatPtr) -> *const T {
     check_valid::<T>();
 
+    // relying on unspecified fat pointer representation
     unsafe { FatPtrRepr { fat_ptr }.ptr_const }
 }
 
 pub const fn decompose<T: ?Sized>(fat_ptr: *const T) -> FatPtr {
     check_valid::<T>();
 
+    // relying on unspecified fat pointer representation
     unsafe { FatPtrRepr { ptr_const: fat_ptr }.fat_ptr }
 }
 

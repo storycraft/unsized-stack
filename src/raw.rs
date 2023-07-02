@@ -83,9 +83,11 @@ impl<T: ?Sized> RawUnsizedStack<T> {
 
         if new_buf_layout.align() != self.buf_layout.align() {
             self.buf = {
+                // Safety: allocate new memory and validate with [`NonNull`]
                 let new_buf = NonNull::new(unsafe { alloc(new_buf_layout) }).unwrap();
 
                 if self.buf_layout.size() != 0 {
+                    // Safety: copy storage data into new valid memory and deallocate old one
                     unsafe {
                         ptr::copy_nonoverlapping(
                             self.buf.as_ptr(),
@@ -102,8 +104,10 @@ impl<T: ?Sized> RawUnsizedStack<T> {
             self.buf_layout = new_buf_layout;
         } else if new_buf_layout.size() != self.buf_layout.size() {
             self.buf = if self.buf_layout.size() == 0 {
+                // Safety: allocate new memory and validate with [`NonNull`]
                 NonNull::new(unsafe { alloc(new_buf_layout) }).unwrap()
             } else {
+                // Safety: reallocate existing memory and validate with [`NonNull`]
                 NonNull::new(unsafe {
                     realloc(self.buf.as_ptr(), self.buf_layout, new_buf_layout.size())
                 })
@@ -129,6 +133,8 @@ impl<T: ?Sized> RawUnsizedStack<T> {
 
         if let Offset::Data(offset) = offset {
             self.buf_occupied = offset + item_layout.size();
+
+            // Safety: original variable copied to internal storage and forgotten. (Variable moved manually)
             unsafe {
                 ptr::copy_nonoverlapping(
                     item_ptr.ptr() as *const u8,
@@ -143,6 +149,7 @@ impl<T: ?Sized> RawUnsizedStack<T> {
 
     pub fn pop(&mut self) -> Option<()> {
         let item = self.table.pop()?;
+        // Safety: Take out [`TableItem`] from table and drop its data
         unsafe {
             drop_item::<T>(self.buf.as_ptr(), item);
         }
@@ -154,7 +161,10 @@ impl<T: ?Sized> RawUnsizedStack<T> {
         Some(())
     }
 
-    pub fn ptr_from_table(&self, func: impl for<'b> FnOnce(&'b [TableItem]) -> Option<&'b TableItem>) -> Option<*const T> {
+    pub fn ptr_from_table(
+        &self,
+        func: impl for<'b> FnOnce(&'b [TableItem]) -> Option<&'b TableItem>,
+    ) -> Option<*const T> {
         Some(compose::<T>(self.buf.as_ptr(), *func(&self.table)?))
     }
 
@@ -162,6 +172,7 @@ impl<T: ?Sized> RawUnsizedStack<T> {
         &self,
         func: impl for<'b> FnOnce(&'b [TableItem]) -> Option<&'b TableItem>,
     ) -> Option<&T> {
+        // Safety: pointer created with [`TableItem`] from table
         Some(unsafe { &*self.ptr_from_table(func)? })
     }
 
@@ -169,10 +180,12 @@ impl<T: ?Sized> RawUnsizedStack<T> {
         &mut self,
         func: impl for<'b> FnOnce(&'b [TableItem]) -> Option<&'b TableItem>,
     ) -> Option<&mut T> {
+        // Safety: Exclusive mutable reference, pointer created with [`TableItem`] from table
         Some(unsafe { &mut *self.ptr_from_table(func)?.cast_mut() })
     }
 
     pub fn clear(&mut self) {
+        // Safety: Take out [`TableItem`] from table and drop its data
         self.table.drain(..).for_each(|item| unsafe {
             drop_item::<T>(self.buf.as_ptr(), item);
         });
@@ -189,12 +202,14 @@ unsafe impl<T: ?Sized + Sync> Sync for RawUnsizedStack<T> {}
 impl<T: ?Sized> Drop for RawUnsizedStack<T> {
     fn drop(&mut self) {
         for item in self.table.iter().copied() {
+            // Safety: Drop every [`TableItem`] from table
             unsafe {
                 drop_item::<T>(self.buf.as_ptr(), item);
             }
         }
 
         if self.buf_layout.size() > 0 {
+            // Safety: buf is valid if its layout has size bigger than 0
             unsafe {
                 dealloc(self.buf.as_ptr(), self.buf_layout);
             }
@@ -218,12 +233,12 @@ pub enum Offset {
 
 #[derive(Debug, Clone, Copy)]
 pub struct TableItem {
-    pub offset: Offset,
-    pub metadata: *const (),
+    offset: Offset,
+    metadata: *const (),
 }
 
 impl TableItem {
-    pub const fn new(offset: Offset, metadata: *const ()) -> Self {
+    const fn new(offset: Offset, metadata: *const ()) -> Self {
         Self { offset, metadata }
     }
 

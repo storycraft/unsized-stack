@@ -8,6 +8,8 @@ Provides efficient list when the elements don't need to get resorted for DST typ
 ## Diagram
 ![diagram](images/diagram.svg)
 
+Each object is correctly padded.
+
 ## Example
 Trait object
 ```rust
