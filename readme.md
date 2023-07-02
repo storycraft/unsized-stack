@@ -1,7 +1,7 @@
 # UnsizedStack
 Store unboxed DST objects
 
-Provides efficient heterogeneous list when the elements don't need to get resorted.
+Provides efficient list when the elements don't need to get resorted for DST types.
 
 ## Diagram
 ![diagram](images/diagram.svg)
