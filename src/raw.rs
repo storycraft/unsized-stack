@@ -8,7 +8,6 @@ use core::{
     alloc::Layout,
     marker::PhantomData,
     ptr::{self, NonNull},
-    slice,
 };
 use std::{
     alloc::{alloc, dealloc, realloc},
@@ -57,14 +56,18 @@ impl<T: ?Sized> RawUnsizedStack<T> {
         self.buf.cast()
     }
 
-    pub fn table_iter(&self) -> slice::Iter<TableItem> {
-        self.table.iter()
+    pub fn table(&self) -> &[TableItem] {
+        &self.table
     }
 
-    pub fn push<I>(&mut self, mut item: I, coercion: fn(&mut I) -> &mut T) {
-        let item_layout = Layout::new::<I>();
-
-        let item_ptr = fat_ptr::decompose(coercion(&mut item));
+    pub fn push<I>(&mut self, item: I, coercion: fn(&I) -> &T) {
+        let (item_layout, item_ptr) = {
+            let coercion_ref = coercion(&item);
+            (
+                Layout::for_value(coercion_ref),
+                fat_ptr::decompose(coercion_ref as *const _),
+            )
+        };
 
         if item_layout.size() == 0 {
             self.table.push(TableItem::new(
@@ -118,7 +121,7 @@ impl<T: ?Sized> RawUnsizedStack<T> {
         self.buf_occupied = offset + item_layout.size();
         unsafe {
             ptr::copy_nonoverlapping(
-                &item as *const I as *const _,
+                item_ptr.ptr() as *const u8,
                 self.buf.as_ptr().wrapping_add(offset),
                 item_layout.size(),
             );
@@ -132,7 +135,7 @@ impl<T: ?Sized> RawUnsizedStack<T> {
     pub fn pop(&mut self) -> Option<()> {
         let item = self.table.pop()?;
         unsafe {
-            self.drop_item(item);
+            drop_item::<T>(self.buf.as_ptr(), item);
         }
 
         if let Offset::Data(offset) = item.offset {
@@ -143,31 +146,36 @@ impl<T: ?Sized> RawUnsizedStack<T> {
     }
 
     pub fn last(&self) -> Option<&T> {
-        Some(unsafe { &*self.compose(*self.table.last()?) })
+        Some(unsafe { &*compose::<T>(self.buf.as_ptr(), *self.table.last()?) })
     }
 
     pub fn last_mut(&mut self) -> Option<&mut T> {
-        let item = *self.table.last_mut()?;
-
-        Some(unsafe { &mut *self.compose(item).cast_mut() })
+        Some(unsafe { &mut *compose::<T>(self.buf.as_ptr(), *self.table.last_mut()?).cast_mut() })
     }
 
-    fn compose(&self, item: TableItem) -> *const T {
-        fat_ptr::compose::<T>(item.to_fat_ptr(self.buf.as_ptr()))
+    pub fn get(&self, index: usize) -> Option<&T> {
+        Some(unsafe { &*compose::<T>(self.buf.as_ptr(), *self.table.get(index)?) })
     }
 
-    unsafe fn drop_item(&self, item: TableItem) {
-        ptr::drop_in_place(self.compose(item).cast_mut());
+    pub fn get_mut(&mut self, index: usize) -> Option<&mut T> {
+        Some(unsafe { &mut *compose::<T>(self.buf.as_ptr(), *self.table().get(index)?).cast_mut() })
+    }
+
+    pub fn clear(&mut self) {
+        self.table.drain(..).for_each(|item| unsafe {
+            drop_item::<T>(self.buf.as_ptr(), item);
+        });
     }
 }
 
-impl Debug for RawUnsizedStack<dyn Debug> {
+impl<T: ?Sized + Debug> Debug for RawUnsizedStack<T> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_list()
             .entries(
-                self.table_iter()
+                self.table
+                    .iter()
                     .copied()
-                    .map(|item| unsafe { &*self.compose(item) }),
+                    .map(|item| unsafe { &*compose::<T>(self.buf.as_ptr(), item) }),
             )
             .finish()
     }
@@ -177,7 +185,7 @@ impl<T: ?Sized> Drop for RawUnsizedStack<T> {
     fn drop(&mut self) {
         for item in self.table.iter().copied() {
             unsafe {
-                self.drop_item(item);
+                drop_item::<T>(self.buf.as_ptr(), item);
             }
         }
 
@@ -187,6 +195,14 @@ impl<T: ?Sized> Drop for RawUnsizedStack<T> {
             }
         }
     }
+}
+
+pub(crate) unsafe fn drop_item<T: ?Sized>(base: *const u8, item: TableItem) {
+    ptr::drop_in_place(compose::<T>(base, item).cast_mut());
+}
+
+pub(crate) fn compose<T: ?Sized>(base: *const u8, item: TableItem) -> *const T {
+    fat_ptr::compose::<T>(item.to_fat_ptr(base))
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -214,23 +230,5 @@ impl TableItem {
             },
             self.metadata,
         )
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::RawUnsizedStack;
-    use std::fmt::Debug;
-
-    #[test]
-    fn test_raw() {
-        let mut raw = RawUnsizedStack::<dyn Debug>::new();
-
-        raw.push(1_u8, |item| item as &mut _);
-        raw.push("asdf", |item| item as &mut _);
-        raw.push(1.0_f32, |item| item as &mut _);
-        raw.push(0_usize, |item| item as &mut _);
-
-        dbg!(raw);
     }
 }

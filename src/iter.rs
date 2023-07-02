@@ -4,27 +4,31 @@
  * Copyright (c) storycraft. Licensed under the MIT Licence.
  */
 
-use core::{slice, ptr::{self, DynMetadata, Pointee}};
+use core::slice;
+use std::marker::PhantomData;
 
-pub struct Iter<'a, T: ?Sized + Pointee<Metadata = DynMetadata<T>>> {
-    pub(crate) ptr: *const u8,
-    pub(crate) table_iter: slice::Iter<'a, (usize, DynMetadata<T>)>,
+use crate::raw::{self, TableItem};
+
+pub struct Iter<'a, T: ?Sized> {
+    pub(crate) base: *const u8,
+    pub(crate) table_iter: slice::Iter<'a, TableItem>,
+    pub(crate) _phantom: PhantomData<&'a T>,
 }
 
-impl<'a, T: ?Sized + Pointee<Metadata = DynMetadata<T>>> Iter<'a, T> {
-    unsafe fn item_at(&self, offset: usize, metadata: DynMetadata<T>) -> &'a T {
-        &*(ptr::from_raw_parts(self.ptr.add(offset) as _, metadata) as *const T)
+impl<'a, T: ?Sized> Iter<'a, T> {
+    fn with_iter(
+        &mut self,
+        func: impl FnOnce(&mut slice::Iter<'a, TableItem>) -> Option<&'a TableItem>,
+    ) -> Option<&'a T> {
+        Some(unsafe { &*raw::compose::<T>(self.base, *func(&mut self.table_iter)?) })
     }
 }
 
-impl<'a, T: ?Sized + Pointee<Metadata = DynMetadata<T>>> Iterator for Iter<'a, T> {
+impl<'a, T: ?Sized> Iterator for Iter<'a, T> {
     type Item = &'a T;
 
     fn next(&mut self) -> Option<Self::Item> {
-        let (offset, metadata) = self.table_iter.next()?;
-
-        // SAFETY: Pointer is offseted using valid offset
-        Some(unsafe { self.item_at(*offset, *metadata) })
+        self.with_iter(|iter| iter.next())
     }
 
     fn size_hint(&self) -> (usize, Option<usize>) {
@@ -39,49 +43,42 @@ impl<'a, T: ?Sized + Pointee<Metadata = DynMetadata<T>>> Iterator for Iter<'a, T
     }
 
     fn nth(&mut self, n: usize) -> Option<Self::Item> {
-        let (offset, metadata) = self.table_iter.nth(n)?;
-
-        return Some(unsafe { self.item_at(*offset, *metadata) });
+        self.with_iter(|iter| iter.nth(n))
     }
 }
 
-impl<'a, T: ?Sized + Pointee<Metadata = DynMetadata<T>>> DoubleEndedIterator for Iter<'a, T> {
+impl<'a, T: 'a + ?Sized> DoubleEndedIterator for Iter<'a, T> {
     fn next_back(&mut self) -> Option<Self::Item> {
-        let (offset, metadata) = self.table_iter.next_back()?;
-
-        // SAFETY: Pointer is offseted using valid offset
-        Some(unsafe { self.item_at(*offset, *metadata) })
+        self.with_iter(slice::Iter::next_back)
     }
 
     fn nth_back(&mut self, n: usize) -> Option<Self::Item> {
-        let (offset, metadata) = self.table_iter.nth_back(n)?;
-
-        // SAFETY: Pointer is offseted using valid offset
-        return Some(unsafe { self.item_at(*offset, *metadata) });
+        self.with_iter(|iter| iter.nth_back(n))
     }
 }
 
-impl<'a, T: ?Sized + Pointee<Metadata = DynMetadata<T>>> ExactSizeIterator for Iter<'a, T> {}
+impl<'a, T: ?Sized> ExactSizeIterator for Iter<'a, T> {}
 
-pub struct IterMut<'a, T: ?Sized + Pointee<Metadata = DynMetadata<T>>> {
-    pub(crate) ptr: *const u8,
-    pub(crate) table_iter: slice::Iter<'a, (usize, DynMetadata<T>)>,
+pub struct IterMut<'a, T: ?Sized> {
+    pub(crate) base: *const u8,
+    pub(crate) table_iter: slice::Iter<'a, TableItem>,
+    pub(crate) _phantom: PhantomData<&'a mut T>,
 }
 
-impl<'a, T: ?Sized + Pointee<Metadata = DynMetadata<T>>> IterMut<'a, T> {
-    unsafe fn item_at(&mut self, offset: usize, metadata: DynMetadata<T>) -> &'a mut T {
-        &mut *(ptr::from_raw_parts::<T>(self.ptr.add(offset) as _, metadata) as *mut T)
+impl<'a, T: ?Sized> IterMut<'a, T> {
+    fn with_iter(
+        &mut self,
+        func: impl FnOnce(&mut slice::Iter<'a, TableItem>) -> Option<&'a TableItem>,
+    ) -> Option<&'a mut T> {
+        Some(unsafe { &mut *raw::compose::<T>(self.base, *func(&mut self.table_iter)?).cast_mut() })
     }
 }
 
-impl<'a, T: ?Sized + Pointee<Metadata = DynMetadata<T>>> Iterator for IterMut<'a, T> {
+impl<'a, T: 'a + ?Sized> Iterator for IterMut<'a, T> {
     type Item = &'a mut T;
 
     fn next(&mut self) -> Option<Self::Item> {
-        let (offset, metadata) = self.table_iter.next()?;
-
-        // SAFETY: Pointer is offseted using valid offset
-        Some(unsafe { self.item_at(*offset, *metadata) })
+        self.with_iter(slice::Iter::next)
     }
 
     fn size_hint(&self) -> (usize, Option<usize>) {
@@ -96,26 +93,18 @@ impl<'a, T: ?Sized + Pointee<Metadata = DynMetadata<T>>> Iterator for IterMut<'a
     }
 
     fn nth(&mut self, n: usize) -> Option<Self::Item> {
-        let (offset, metadata) = self.table_iter.nth(n)?;
-
-        return Some(unsafe { self.item_at(*offset, *metadata) });
+        self.with_iter(|iter| iter.nth(n))
     }
 }
 
-impl<'a, T: ?Sized + Pointee<Metadata = DynMetadata<T>>> DoubleEndedIterator for IterMut<'a, T> {
+impl<'a, T: ?Sized> DoubleEndedIterator for IterMut<'a, T> {
     fn next_back(&mut self) -> Option<Self::Item> {
-        let (offset, metadata) = self.table_iter.next_back()?;
-
-        // SAFETY: Pointer is offseted using valid offset
-        Some(unsafe { self.item_at(*offset, *metadata) })
+        self.with_iter(slice::Iter::next_back)
     }
 
     fn nth_back(&mut self, n: usize) -> Option<Self::Item> {
-        let (offset, metadata) = self.table_iter.nth_back(n)?;
-
-        // SAFETY: Pointer is offseted using valid offset
-        return Some(unsafe { self.item_at(*offset, *metadata) });
+        self.with_iter(|iter| iter.nth_back(n))
     }
 }
 
-impl<'a, T: ?Sized + Pointee<Metadata = DynMetadata<T>>> ExactSizeIterator for IterMut<'a, T> {}
+impl<'a, T: ?Sized> ExactSizeIterator for IterMut<'a, T> {}

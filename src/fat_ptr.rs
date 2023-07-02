@@ -54,7 +54,6 @@ pub const fn check_valid<T: ?Sized>() {
 }
 
 pub const fn compose<T: ?Sized>(fat_ptr: FatPtr) -> *const T {
-
     unsafe { FatPtrRepr { fat_ptr }.ptr_const }
 }
 
