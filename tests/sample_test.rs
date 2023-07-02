@@ -42,7 +42,7 @@ fn str_stack_test() {
 fn slice_stack_test() {
     let mut stack = UnsizedStack::<[i32]>::new();
 
-    stack.push([1, 2], |item| item); // zst
+    stack.push([1, 2], |item| item);
     stack.push([3, 4], |item| item);
 
     dbg!(&stack);
