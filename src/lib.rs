@@ -1,3 +1,9 @@
+/*
+ * Created on Sun Jul 02 2023
+ *
+ * Copyright (c) storycraft. Licensed under the MIT Licence.
+ */
+
 #![doc = include_str!("../readme.md")]
 
 mod fat_ptr;
