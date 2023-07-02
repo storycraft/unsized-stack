@@ -1,6 +1,6 @@
 [package]
 name = "unsized-stack"
-description = "Fast heterogeneous stack"
+description = "Fast heterogeneous / unsized stack"
 version = "0.1.0"
 edition = "2021"
 authors = ["storycraft <storycraft@pancake.sh>"]

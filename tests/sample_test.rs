@@ -26,8 +26,24 @@ fn trait_stack_test() {
 fn str_stack_test() {
     let mut stack = UnsizedStack::<str>::new();
 
-    stack.push("String", |item| *item as _);
-    stack.push("ASDF", |item| *item as _);
+    stack.push("", |item| item); // zst
+    stack.push("ASDF", |item| item);
+
+    dbg!(&stack);
+    assert_eq!(stack.len(), 2);
+
+    stack.pop();
+    stack.pop();
+
+    assert_eq!(stack.len(), 0);
+}
+
+#[test]
+fn slice_stack_test() {
+    let mut stack = UnsizedStack::<[i32]>::new();
+
+    stack.push([1, 2], |item| item); // zst
+    stack.push([3, 4], |item| item);
 
     dbg!(&stack);
     assert_eq!(stack.len(), 2);
