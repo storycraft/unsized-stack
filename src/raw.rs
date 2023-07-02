@@ -168,6 +168,9 @@ impl<T: ?Sized> RawUnsizedStack<T> {
     }
 }
 
+unsafe impl<T: ?Sized + Send> Send for RawUnsizedStack<T> {}
+unsafe impl<T: ?Sized + Sync> Sync for RawUnsizedStack<T> {}
+
 impl<T: ?Sized> Drop for RawUnsizedStack<T> {
     fn drop(&mut self) {
         for item in self.table.iter().copied() {
