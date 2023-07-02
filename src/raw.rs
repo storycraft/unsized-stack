@@ -100,7 +100,7 @@ impl<T: ?Sized> RawUnsizedStack<T> {
             };
 
             self.buf_layout = new_buf_layout;
-        } else if new_buf_layout.size() > self.buf_layout.size() {
+        } else if new_buf_layout.size() != self.buf_layout.size() {
             self.buf = if self.buf_layout.size() == 0 {
                 NonNull::new(unsafe { alloc(new_buf_layout) }).unwrap()
             } else {
@@ -158,14 +158,14 @@ impl<T: ?Sized> RawUnsizedStack<T> {
         Some(compose::<T>(self.buf.as_ptr(), *func(&self.table)?))
     }
 
-    pub fn with_table(
+    pub fn ref_from_table(
         &self,
         func: impl for<'b> FnOnce(&'b [TableItem]) -> Option<&'b TableItem>,
     ) -> Option<&T> {
         Some(unsafe { &*self.ptr_from_table(func)? })
     }
 
-    pub fn with_table_mut(
+    pub fn mut_from_table(
         &mut self,
         func: impl for<'b> FnOnce(&'b [TableItem]) -> Option<&'b TableItem>,
     ) -> Option<&mut T> {
@@ -180,7 +180,10 @@ impl<T: ?Sized> RawUnsizedStack<T> {
     }
 }
 
+// Safety: This impl is safe because values stored inside [`RawUnsizedStack`] is Send
 unsafe impl<T: ?Sized + Send> Send for RawUnsizedStack<T> {}
+
+// Safety: This impl is safe because values stored inside [`RawUnsizedStack`] is Sync
 unsafe impl<T: ?Sized + Sync> Sync for RawUnsizedStack<T> {}
 
 impl<T: ?Sized> Drop for RawUnsizedStack<T> {
