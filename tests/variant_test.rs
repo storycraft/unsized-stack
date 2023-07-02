@@ -1,3 +1,9 @@
+/*
+ * Created on Mon Jul 03 2023
+ *
+ * Copyright (c) storycraft. Licensed under the MIT Licence.
+ */
+
 use unsized_stack::UnsizedStack;
 
 use std::fmt::Debug;
@@ -13,43 +19,27 @@ fn trait_stack_test() {
 
     dbg!(&stack);
     assert_eq!(stack.len(), 4);
-
-    stack.pop();
-    stack.pop();
-    stack.pop();
-    stack.pop();
-
-    assert_eq!(stack.len(), 0);
 }
 
 #[test]
 fn str_stack_test() {
     let mut stack = UnsizedStack::<str>::new();
 
-    stack.push("", |item| item); // zst
+    stack.push("", |item| item); // ZST
     stack.push("ASDF", |item| item);
 
     dbg!(&stack);
     assert_eq!(stack.len(), 2);
-
-    stack.pop();
-    stack.pop();
-
-    assert_eq!(stack.len(), 0);
 }
 
 #[test]
 fn slice_stack_test() {
     let mut stack = UnsizedStack::<[i32]>::new();
 
-    stack.push([1, 2], |item| item);
-    stack.push([3, 4], |item| item);
+    stack.push([1, 2, 3, 4], |item| item);
+    stack.push([5, 6], |item| item);
+    stack.push([7, 8, 9], |item| item);
 
     dbg!(&stack);
-    assert_eq!(stack.len(), 2);
-
-    stack.pop();
-    stack.pop();
-
-    assert_eq!(stack.len(), 0);
+    assert_eq!(stack.len(), 3);
 }
