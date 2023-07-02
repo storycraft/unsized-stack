@@ -205,11 +205,11 @@ pub enum Offset {
 #[derive(Debug, Clone, Copy)]
 pub struct TableItem {
     pub offset: Offset,
-    pub metadata: usize,
+    pub metadata: *const (),
 }
 
 impl TableItem {
-    pub const fn new(offset: Offset, metadata: usize) -> Self {
+    pub const fn new(offset: Offset, metadata: *const ()) -> Self {
         Self { offset, metadata }
     }
 

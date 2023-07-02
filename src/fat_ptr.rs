@@ -10,11 +10,11 @@ use core::mem;
 #[repr(C)]
 pub struct FatPtr {
     ptr: *const (),
-    metadata: usize,
+    metadata: *const (),
 }
 
 impl FatPtr {
-    pub const fn new<T>(ptr: *const T, metadata: usize) -> Self {
+    pub const fn new<T>(ptr: *const T, metadata: *const ()) -> Self {
         Self {
             ptr: ptr as _,
             metadata,
@@ -25,7 +25,7 @@ impl FatPtr {
         self.ptr
     }
 
-    pub const fn metadata(&self) -> usize {
+    pub const fn metadata(&self) -> *const () {
         self.metadata
     }
 }
@@ -54,6 +54,8 @@ pub const fn check_valid<T: ?Sized>() {
 }
 
 pub const fn compose<T: ?Sized>(fat_ptr: FatPtr) -> *const T {
+    check_valid::<T>();
+
     unsafe { FatPtrRepr { fat_ptr }.ptr_const }
 }
 
@@ -70,6 +72,6 @@ mod tests {
     #[test]
     fn test() {
         let fat_ptr = decompose(&[0_usize] as *const [usize]);
-        assert_eq!(fat_ptr.metadata(), 1);
+        assert_eq!(fat_ptr.metadata(), 1 as *const ());
     }
 }
