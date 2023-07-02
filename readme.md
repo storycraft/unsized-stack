@@ -3,6 +3,8 @@ Store unboxed DST objects
 
 Provides efficient list when the elements don't need to get resorted for DST types.
 
+> NOTE: `UnsizedStack` relies on an unspecified fat pointer representation
+
 ## Diagram
 ![diagram](images/diagram.svg)
 
