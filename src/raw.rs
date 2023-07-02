@@ -165,6 +165,7 @@ impl<T: ?Sized> RawUnsizedStack<T> {
         self.table.drain(..).for_each(|item| unsafe {
             drop_item::<T>(self.buf.as_ptr(), item);
         });
+        self.buf_occupied = 0;
     }
 }
 
